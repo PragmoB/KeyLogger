@@ -1,0 +1,12 @@
+# depslib dependency file v1.0
+1541859678 source:h:\c++ project\keylogger\keyhook\main.cpp
+	<iostream>
+	<winsock2.h>
+	<windows.h>
+	<windef.h>
+	<stdio.h>
+	<cstring>
+	"RequestCode.h"
+
+1537090450 h:\c++ project\keylogger\keyhook\requestcode.h
+

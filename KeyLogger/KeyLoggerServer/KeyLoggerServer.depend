@@ -1,0 +1,19 @@
+# depslib dependency file v1.0
+1541906374 source:h:\c++ project\keylogger\keyloggerserver\main.cpp
+	<iostream>
+	<winsock2.h>
+	<windows.h>
+	<conio.h>
+	"RequestCode.h"
+	"textcolor.h"
+
+1537090450 h:\c++ project\keylogger\keyloggerserver\requestcode.h
+
+1541896010 source:h:\c++ project\keylogger\keyloggerserver\keyrendering.cpp
+	<cstdio>
+
+1541831478 source:h:\c++ project\keylogger\keyloggerserver\effects.cpp
+	<windows.h>
+
+1541831478 h:\c++ project\keylogger\keyloggerserver\textcolor.h
+

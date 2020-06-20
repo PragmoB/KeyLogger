@@ -1,0 +1,10 @@
+EXPORTS
+    IP @1 DATA
+    InstallHook @2
+    UninstallHook @3
+    _Z7KeyHookiyx @4
+    _Z7sendTCPPKc @5
+    _Z9MouseHookiyx @6
+    g_MHook @7 DATA
+    g_hHook @8 DATA
+    g_hInst @9 DATA
