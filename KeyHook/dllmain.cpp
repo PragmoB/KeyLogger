@@ -42,6 +42,38 @@ BOOL WINAPI PeekMessageW_hook(LPMSG lpMsg, HWND  hWnd, UINT  wMsgFilterMin, UINT
 
 void hook(FARPROC addr, void* hook_addr, UCHAR* instruction, UCHAR* old);
 
+/*
+const WCHAR* system_process[] = {
+	L"svchost.exe",
+	L"sihost.exe",
+	L"msdtc.exe",
+	L"WmiApSrv.exe",
+	L"WUDFHost.exe",
+	L"winlogon.exe",
+	L"dwm.exe",
+	L"NVDisplay.Container.exe",
+	L"jhi_service.exe",
+	L"WmiPrvSE.exe",
+	L"ctfmon.exe",
+	L"SearchIndexer.exe",
+	L"SettinglSyncHost.exe",
+	L"dllhost.exe",
+	L"userinit.exe",
+	0
+};*/
+
+const char* system_user_process[] = {
+	"notepad.exe",
+	0
+};
+const char* critical_user_process[] = {
+	"explorer.exe",
+	0
+};
+
+const char* system_path = "c:\\windows\\system32";
+int system_path_len = 19;
+
 char host_IP[20] = "";
 int host_port = 0;
 BOOL APIENTRY DllMain( HMODULE hModule,
@@ -49,23 +81,67 @@ BOOL APIENTRY DllMain( HMODULE hModule,
                        LPVOID lpReserved
                      )
 {
+
+	
     switch (ul_reason_for_call)
     {
     case DLL_PROCESS_ATTACH:
 	{
+
+		char process_path[100] = "";
+		char* process_name = process_path;
+
+		GetModuleFileNameA(GetModuleHandle(NULL), process_path, 100);
+		int len = strlen(process_path);
+		for (int i = 0; i < len; i++)
+			process_path[i] = tolower(process_path[i]); // 경로를 소문자로 통일
+
+		for (int i = strlen(process_path) - 1; i >= 0; i--) // 프로세스 이름 주소 계산
+			if (process_path[i] == '\\')
+			{
+				process_name = process_path + i + 1;
+				break;
+			}
+
+		char original_byte = process_path[system_path_len];
+		process_path[system_path_len] = 0;
+
+		// 프로세스 경로 비교를 통해 지금 인젝션된 곳이 시스템 프로세스인지 검사
+		if (!strcmp(process_path, system_path))
+		{
+			// 그런데 notepad.exe같은게 있을수 있으므로 그 부분은 예외
+			int i;
+			for (i = 0; system_user_process[i] != 0; i++)
+			{
+				if(!strcmp(process_path + system_path_len + 1, system_user_process[i]))
+					break;
+			}
+
+			if (system_user_process[i] == 0)
+				return FALSE; // 시스템 프로세스면 후킹x
+		}
+		process_path[system_path_len] = original_byte;
+
+		for (int i = 0; critical_user_process[i] != 0; i++)
+		{
+			if (!strcmp(critical_user_process[i], process_name)) // 시스템 프로세스는 아니지만 치명적인 유저 프로세스일 경우
+				return FALSE; // 후킹x
+		}
+		OutputDebugStringA(process_name);
+		
 		UCHAR jmp_hook[] = "\xe9\x00\x00\x00\x00\x00\x00\x00\x00";
 
 		HMODULE hUser32 = GetModuleHandleA("user32.dll");
 		if (!hUser32) // user32.dll 없음
-			return TRUE;
+			return FALSE;
 
 		FARPROC GetMessageA_addr = GetProcAddress(hUser32, "GetMessageA");
 		FARPROC GetMessageW_addr = GetProcAddress(hUser32, "GetMessageW");
 		FARPROC PeekMessageA_addr = GetProcAddress(hUser32, "PeekMessageA");
-		FARPROC PeekMessageW_addr = GetProcAddress(hUser32, "PeekMessageW");;
+		FARPROC PeekMessageW_addr = GetProcAddress(hUser32, "PeekMessageW");
 
-		if (!(GetMessageA_addr && GetMessageW_addr))
-			return TRUE;
+		if (!(GetMessageA_addr && GetMessageW_addr && PeekMessageA_addr && PeekMessageW_addr))
+			return FALSE;
 		
 		// 후킹
 		hook(GetMessageA_addr, GetMessageA_hook, GetMessageA_hook_instruction, GetMessageA_old);
@@ -99,7 +175,7 @@ BOOL APIENTRY DllMain( HMODULE hModule,
 void hook(FARPROC api, void* hook_addr, UCHAR* instruction, UCHAR* old)
 {
 	DWORD dwOld;
-	UINT instruction_size = 1 + sizeof(ARCH_UINT);
+	UINT instruction_size = 1 + 4;
 	VirtualProtect((LPVOID)((ARCH_UINT)api),
 		instruction_size + 2, PAGE_EXECUTE_READWRITE, &dwOld); // 실행코드 영역에 권한 부여
 	memcpy(old, (LPVOID)api, instruction_size); // 후킹 전 원래 바이트 저장
@@ -178,7 +254,7 @@ SOCKET sendMSG(SOCKET sock, LPMSG msg)
 			delete pWC;
 
 			// 프로세스 이름 쓰기
-			GetWindowThreadProcessId(msg->hwnd, &dwPID);
+			dwPID = GetCurrentProcessId();
 			FindProcessName(dwPID, (WCHAR*)(buff + len));
 			((WCHAR*)(buff + sizeof(MSG)))[len] = 0;
 			len += sizeof(WCHAR) * (wcslen((WCHAR*)(buff + len)) + 1);
@@ -210,18 +286,11 @@ BOOL WINAPI GetMessageA_hook(LPMSG lpMsg, HWND hWnd, UINT wMsgFilterMin, UINT wM
 {
 	HMODULE hUser32 = GetModuleHandleA("user32.dll");
 	FARPROC GetMessageA_addr = GetProcAddress(hUser32, "GetMessageA");
-
-	if (GetMessage_first_hooked)
-	{
-		FARPROC PeekMessageA_addr = GetProcAddress(hUser32, "PeekMessageA");
-		memcpy((LPVOID)PeekMessageA_addr, PeekMessageA_old, 1 + sizeof(ARCH_UINT));
-		GetMessage_first_hooked = FALSE;
-	}
 	
-	memcpy((LPVOID)GetMessageA_addr, GetMessageA_old, 1 + sizeof(ARCH_UINT)); // api 훅 제거 후
+	memcpy((LPVOID)GetMessageA_addr, GetMessageA_old, 1 + 4); // api 훅 제거 후
 	BOOL ret = ((BOOL(WINAPI*) (LPMSG, HWND, UINT, UINT))GetMessageA_addr)
 		(lpMsg, hWnd, wMsgFilterMin, wMsgFilterMax); // 호출
-	memcpy((LPVOID)GetMessageA_addr, GetMessageA_hook_instruction, 1 + sizeof(ARCH_UINT)); // 훅 복원
+	memcpy((LPVOID)GetMessageA_addr, GetMessageA_hook_instruction, 1 + 4); // 훅 복원
 	
 	if (ret != -1)
 	{
@@ -243,17 +312,11 @@ BOOL WINAPI GetMessageW_hook(LPMSG lpMsg, HWND hWnd, UINT wMsgFilterMin, UINT wM
 {
 	HMODULE hUser32 = GetModuleHandleA("user32.dll");
 	FARPROC GetMessageW_addr = GetProcAddress(hUser32, "GetMessageW");
-	if (GetMessage_first_hooked)
-	{
-		FARPROC PeekMessageW_addr = GetProcAddress(hUser32, "PeekMessageW");
-		memcpy((LPVOID)PeekMessageW_addr, PeekMessageW_old, 1 + sizeof(ARCH_UINT));
-		GetMessage_first_hooked = FALSE;
-	}
 
-	memcpy((LPVOID)GetMessageW_addr, GetMessageW_old, 1 + sizeof(ARCH_UINT)); // api 훅 제거 후
+	memcpy((LPVOID)GetMessageW_addr, GetMessageW_old, 1 + 4); // api 훅 제거 후
 	BOOL ret = ((BOOL(WINAPI*) (LPMSG, HWND, UINT, UINT))GetMessageW_addr)
 		(lpMsg, hWnd, wMsgFilterMin, wMsgFilterMax); // 호출
-	memcpy((LPVOID)GetMessageW_addr, GetMessageW_hook_instruction, 1 + sizeof(ARCH_UINT)); // 훅 복원
+	memcpy((LPVOID)GetMessageW_addr, GetMessageW_hook_instruction, 1 + 4); // 훅 복원
 
 	if (ret != -1)
 	{
@@ -276,10 +339,10 @@ BOOL WINAPI PeekMessageA_hook(LPMSG lpMsg, HWND hWnd, UINT wMsgFilterMin, UINT w
 	HMODULE hUser32 = GetModuleHandleA("user32.dll");
 	FARPROC PeekMessageA_addr = GetProcAddress(hUser32, "PeekMessageA");
 
-	memcpy((LPVOID)PeekMessageA_addr, PeekMessageA_old, 1 + sizeof(ARCH_UINT)); // api 훅 제거 후
+	memcpy((LPVOID)PeekMessageA_addr, PeekMessageA_old, 1 + 4); // api 훅 제거 후
 	BOOL ret = ((BOOL(WINAPI*) (LPMSG, HWND, UINT, UINT, UINT))PeekMessageA_addr)
 		(lpMsg, hWnd, wMsgFilterMin, wMsgFilterMax, wRemoveMsg); // 호출
-	memcpy((LPVOID)PeekMessageA_addr, PeekMessageA_hook_instruction, 1 + sizeof(ARCH_UINT)); // 훅 복원
+	memcpy((LPVOID)PeekMessageA_addr, PeekMessageA_hook_instruction, 1 + 4); // 훅 복원
 
 	if (ret != -1)
 	{
@@ -302,10 +365,10 @@ BOOL WINAPI PeekMessageW_hook(LPMSG lpMsg, HWND hWnd, UINT wMsgFilterMin, UINT w
 	HMODULE hUser32 = GetModuleHandleA("user32.dll");
 	FARPROC PeekMessageW_addr = GetProcAddress(hUser32, "PeekMessageW");
 
-	memcpy((LPVOID)PeekMessageW_addr, PeekMessageW_old, 1 + sizeof(ARCH_UINT)); // api 훅 제거 후
+	memcpy((LPVOID)PeekMessageW_addr, PeekMessageW_old, 1 + 4); // api 훅 제거 후
 	BOOL ret = ((BOOL(WINAPI*) (LPMSG, HWND, UINT, UINT, UINT))PeekMessageW_addr)
 		(lpMsg, hWnd, wMsgFilterMin, wMsgFilterMax, wRemoveMsg); // 호출
-	memcpy((LPVOID)PeekMessageW_addr, PeekMessageW_hook_instruction, 1 + sizeof(ARCH_UINT)); // 훅 복원
+	memcpy((LPVOID)PeekMessageW_addr, PeekMessageW_hook_instruction, 1 + 4); // 훅 복원
 
 	if (ret != -1)
 	{
